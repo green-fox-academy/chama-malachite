@@ -61,8 +61,44 @@ You can query all your currently deployed applications using the following comma
 
 ### Deploying the .WAR file to Elastic Beanstalk
 
-Deploying a .WAR file to Elastic Beanstalk via the AWC Console in a browser is a straightforward process. You just need to create a new application, choose Java, upload your .WAR file, and click Upload & Deploy.
+Deploying a .WAR file to Elastic Beanstalk via the AWC Console in a browser is a straightforward process. You just need to click "create new web application", choose Java or Tomcat as a platform, upload your .WAR file, and click Upload.
 
-However, what this does in the background is that it creates an Amazon S3 (Simple Storage Service) bucket, in which it deploys the application, and links it to Elastic Beanstalk.
+What this does in the background is that it creates an Amazon S3 (Simple Storage Service) bucket, in which it deploys the application, and links it to Elastic Beanstalk. We need this S3 bucket if we want to upload our program via the AWS CLI.
+
+To upload a Java web app via the AWS CLI, follow the steps in the example below. Let's suppose you already have a Java web app running called 'hello-world', which is uploaded to an AWS server in the eu-central-1 region.
+
+#### Step 1: Find the S3 bucket the program runs in
+
+> aws elasticbeanstalk describe-application-versions --application-name hello-world
+
+The output of the command above will contain a line called "S3Bucket" : "elasticbeanstalk-eu-central-1-XXXXXX". This is the address of the S3 bucket we need to upload our .WAR to.
+
+#### Step 2: Upload the .WAR file to the S3 bucket
+
+> aws s3 cp ./hello-world.war s3://elasticbeanstalk-eu-central-1-XXXXXX/s3-hello-world.war
+
+With the above command, we've uploaded our "hello-world.war" file to S3 as "s3-hello-world.war"
+
+#### Step 3: Create a new application version
+
+> aws elasticbeanstalk create-application-version --application-name hello-world --version-label s3-upload --source-bundle S3Bucket=elasticbeanstalk-eu-central-1-XXXXXX,S3Key=s3-hello-world.war
+
+With the above command, we've created a new version for our hello-world app, with the version name "s3-upload". However, we still need to tell Elastic Beanstalk to use this new version. For this, we have to update the environment.
+
+#### Step 4: Get application environment name
+
+> aws elasticbeanstalk describe-environments --application-name hello-world
+
+To identify which environment do we need to update, run the above command. The output will contain a line "EnvironmentName": "hello-world-env", this is our environment name.
+
+#### Step 5: Update the environment
+
+> aws elasticbeanstalk update-environment --environment-name hello-world-env --version-label s3-upload
+
+With this command we tell Elastic Beanstalk to deploy our new version of the app, called "s3-upload". This command will return an output that contains a line "VersionLabel": "s3-upload". If the version label matches the new version we've created in Step 3, the update was successful.
+
+#### Step 6: Verify app health
+
+Re-run the command in Step 4, that describes the environment. The output contains a line "Health": "Green". If the health is green, then the deployment was successful.
 
 
