@@ -9,7 +9,9 @@
 * In case you need help, check out these sites below:
 
 [AWSCLI Installing Guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html)
+
 [EBCLI Installing Guide](https://docs.aws.amazon.com/elasticbeanstalk/latest/dg/eb-cli3-install-advanced.html)
+
 [Docker Installing Guide](https://docs.docker.com/v17.09/engine/installation/)
 
 ## Guide:
