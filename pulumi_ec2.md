@@ -175,3 +175,124 @@ To delete the stack itself, use:
 
 > $ pulumi stack rm
 
+## Creating multiple EC2 instances with Pulumi, using Python
+
+*"There are some who call me... Tim?!"*
+
+Now we'll do the same with the might of Python.
+
+### Step 1
+
+Create a new Pulumi project.
+
+> $ pulumi new aws-python
+
+### Step 2
+
+Create new Python virtual environment
+
+```
+$ virtualenv -p python3 venv
+$ source venv/bin/activate
+$ pip3 install -r requirements.txt
+```
+
+### Step 3
+
+Open \_\_main\_\_.py and write the basic architecture.
+
+```
+import pulumi
+import pulumi_aws as aws
+
+size = 't2.micro'
+ami = aws.get_ami(most_recent="true",
+                  owners=["137112412989"],
+                  filters=[{"name":"name","values":["amzn-ami-hvm-*"]}])
+
+group = aws.ec2.SecurityGroup('webserver-secgrp',
+    description='Enable HTTP access',
+    ingress=[
+        { 'protocol': 'tcp', 'from_port': 22, 'to_port': 22, 'cidr_blocks': ['0.0.0.0/0'] }
+    ])
+
+server = aws.ec2.Instance('webserver-www',
+    instance_type=size,
+    security_groups=[group.name], # reference security group from above
+    ami=ami.id)
+
+pulumi.export('publicIp', server.public_ip)
+pulumi.export('publicHostName', server.public_dns)
+```
+
+The last two rows contain auxiliary code only, which prints information about the created server instance for the user.
+
+### Step 4
+
+Configure security group to your liking.
+In this example we open port 80 of the servers that we are creating.
+
+```
+group = aws.ec2.SecurityGroup('webserver-secgrp',
+    description='Enable HTTP access',
+    ingress=[
+        { 'protocol': 'tcp', 'from_port': 22, 'to_port': 22, 'cidr_blocks': ['0.0.0.0/0'] },
+        { 'protocol': 'tcp', 'from_port': 80, 'to_port': 80, 'cidr_blocks': ['0.0.0.0/0'] }
+    ])
+```
+
+### Step 5
+
+Add user defined shell commands that should be executed on the newly created servers.
+
+```
+user_data = """
+#!/bin/bash
+echo "Hello, World!" > index.html
+nohup python -m SimpleHTTPServer 80 &
+"""
+
+server = ec2.Instance('webserver-www',
+    instance_type=size,
+    security_groups=[group.name], # reference security group from above
+    user_data=user_data, # <-- ADD THIS LINE
+    ami=ami.id)
+```
+
+### Step 6
+
+Modify server creation so that Pulumi creates multiple servers during deployment.
+
+```
+server_names = ["webserver-www-dev", "webserver-www-test", "webserver-www-prod"]
+server_array = []
+export_array = ["dev", "test", "prod"]
+
+
+for i in range(3):
+    server_array.append(aws.ec2.Instance(server_names[i],
+        instance_type=size,
+        security_groups=[group.name], # reference security group from above
+        user_data=user_data, # <-- ADD THIS LINE
+        ami=ami.id))
+    
+for i in range(3):
+    pulumi.export('publicIp' + export_array[i], server_array[i].public_ip)
+    pulumi.export('publicHostName' + export_array[i], server_array[i].public_dns)
+```
+
+### Step 7
+
+Deploy your stack.
+
+> $ pulumi up
+
+Don't forget to clean up after yourself when you don't need the servers any more. :)
+
+> $ pulumi destroy
+
+To delete the stack itself, use:
+
+> $ pulumi stack rm
+
+
