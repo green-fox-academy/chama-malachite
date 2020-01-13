@@ -9,6 +9,7 @@
 * For more information about the topics mentioned above, check out these sites below:
 
 [Docker Installation Guide](https://docs.docker.com/v17.09/engine/installation/)
+
 [Terraform Documentation - Very Useful!](https://learn.hashicorp.com/terraform/getting-started/intro)
 
 ## Guide:
