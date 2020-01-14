@@ -25,6 +25,15 @@ sudo service ssh restart
 sudo useradd -m -p $(openssl passwd -1 $password) $username
 ```
 
+In case you are running a CentOS based distro, substitute
+```
+sudo service ssh restart
+```
+for
+```
+sudo service sshd restart
+```
+
 Let's break it down.
 To allow username & password authentication, you need to modify the sshd_config in the /etc/ssh directory.
 You need to change `PasswordAuthentication no` to `PasswordAuthentication yes`.
@@ -35,7 +44,7 @@ Finally, create a new user by specifying username and password.
 ## Step 3
 
 Terraform apply time!
-You can now login using ssh.
+You can now log in using ssh.
 
 ```
 ssh $public_ip -l $username
