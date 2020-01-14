@@ -113,8 +113,24 @@ The last two rows contain auxiliary code only, which prints information about th
 
 ### Step 3
 
+Configure the ami you would like to use. To use the latest Ubuntu 18.04 server x64 version, write this:
+
+```
+let ami = aws.getAmi({
+    filters: [{
+      name: "name",
+      values: ["ubuntu/images/hvm-ssd/ubuntu-bionic-18.04-amd64-server*"],
+    }],
+    owners: ["099720109477"],
+    mostRecent: true,
+});
+```
+
+### Step 4
+
 Configure security group to your liking.
 In this example we open port 80 of the servers that we are creating.
+An egress port should also be opened.
 
 ```
 let group = new aws.ec2.SecurityGroup("webserver-secgrp", {
@@ -122,10 +138,25 @@ let group = new aws.ec2.SecurityGroup("webserver-secgrp", {
         { protocol: "tcp", fromPort: 22, toPort: 22, cidrBlocks: ["0.0.0.0/0"] },
         { protocol: "tcp", fromPort: 80, toPort: 80, cidrBlocks: ["0.0.0.0/0"] },
     ],
+    egress: [
+        { protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] },
+    ],
 });
 ```
 
-### Step 4
+### Step 5
+
+Add a key pair in order to make the instances accesible via ssh protocol. First, navigate to a directory you store your keys, e.g. ~/Creds on Linux, and generate a new key pair with `ssh-keygen -o`. In this case, we use the name pulumi_key for our key pair.
+
+In index.js, add the contents of your public key by copying it after "publicKey:". Uploading this file to anywhere with this kind of sensitive content might be unwise, therefore you can use the npm package called "fs" to read the contents of your public key. To install this package, run `sudo npm install fs -save` in the directory of your pulumi project.
+
+```
+const deployer = new aws.ec2.KeyPair("deployer", {
+    publicKey: fs.readFileSync('../../../Creds/pulumi_key.pub', 'utf8'),
+});
+```
+
+### Step 6
 
 Add user defined shell commands that should be executed on the newly created servers.
 
@@ -134,16 +165,37 @@ let userData = // <-- ADD THIS DEFINITION
 `#!/bin/bash
 echo "Hello, World!" > index.html
 nohup python -m SimpleHTTPServer 80 &`;
+```
 
+If we added the "fs" npm package to our project
+
+> $ sudo npm install fs -save
+
+we can also read the content of a shell script file, specifying its relative path:
+
+```
+let userData = fs.readFileSync('../scripts/helloworld.sh', 'utf8');
+```
+
+### Step 7
+Now it is time to define an EC2 instance:
+
+```
 let server = new aws.ec2.Instance("web-server-www", {
     instanceType: size,
     securityGroups: [ group.name ], // reference the group object above
     ami: ami.id,
-    userData: userData,             // <-- ADD THIS LINE
+    userData: userData,             // <-- ADD THIS LINE for the code to run
+    keyName: deployer,              // <-- ADD THIS LINE for the key to the ssh connection
+    tags: {                         
+        Name: "servername",
+    },
 });
 ```
 
-### Step 5
+The last, "tags" part is where you can specify a name for your instance to appear in the column "Name" on the AWS webpage.
+
+### Step 8
 
 Modify server creation so that Pulumi creates multiple servers during deployment.
 
@@ -157,11 +209,37 @@ for (let i = 0; i < serverNames.length; ++i) {
         securityGroups: [ group.name ], // reference the security group resource above
         ami: ami.id,
         userData: userData,
+        keyName: deployer,
+        tags: {
+            Name: `${serverNames[i]}`,
+        },
     });
 }
 ```
 
-### Step 6
+Another way to do this, with the *forEach* method:
+
+```
+let serverNames = ["dev", "test", "prod"];
+let serverArray = [];
+
+serverNames.forEach((e) => {
+    serverArray.push (
+        new aws.ec2.Instance("server-" + e, {
+            instanceType: size,
+            securityGroups: [ group.name ], // reference the security group resource above
+            ami: ami.id,
+            userData: userData,
+            keyName: deployer,
+            tags: {
+                Name: `server-${e}`,
+            },
+        })
+    )
+})
+```
+
+### Step 9
 
 Deploy your stack.
 
