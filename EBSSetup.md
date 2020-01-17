@@ -68,6 +68,6 @@ docker-compose up -d
 1. Install monitoring programs on the monitored server
 
 *	Follow steps one (Installation) and two (configuration) for the Filebeat, Metricbeat and Heartbeat systems.
-**	Make sure that 'localhost' is replaced with the IP address of the ELK-Stack server, but the ports remain in place.
-**	Do not add new lines into the config files, always edit or uncomment the existing ones.
+	*	Make sure that 'localhost' is replaced with the IP address of the ELK-Stack server, but the ports remain in place.
+	*	Do not add new lines into the config files, always edit or uncomment the existing ones.
 *	Verify that data is sent from the monitored server to Elasticsearch by logging into Kibana and going to the Dashboard that's for the metrics module sent to Elasticsearch.
