@@ -6,7 +6,9 @@ In this tutorial, we are going to make two AWS EC2 instances: one to run Nagios 
 You can make these servers with Terraform or Pulumi, which will not be discussed here, only the contents of the shell scripts to be specified as *user_data*. 
 **Important!** When you are configuring the security group for `STBM`, you need to allow access to the *NRPE* port (5666) from `NAGIOS` (basically add port 5666 to your ingress ports in the security group you are making).
 
-## The script to set up the server with Nagios on Ubuntu 18.04
+The following scripts have comments included explaining every step of the process.
+
+## The script to set up the server with Nagios (`NAGIOS`) on Ubuntu 18.04
 
 ```
 #!/bin/bash
@@ -158,7 +160,7 @@ sudo make check_nrpe
 sudo make install-plugin
 ```
 
-## The script to set up the server to monitered by Nagios on Ubuntu 18.04
+## The script to set up the server to monitered by Nagios (`STBM`) on Ubuntu 18.04
 
 ```
 #!/bin/bash
@@ -235,7 +237,9 @@ initctl reload-configuration # upstart
 # In Ubuntu, the firewall is disabled by default (check: $ sudo ufw status)
 ```
 
-## Manual configuration to make these two to speak to each other...
+## Manual configuration
+
+### 1. First, make sure these two speak to each other...
 
 We need to ssh into both of these servers, and check first, whether everything is working as it should be.
 On `STBM` run the following command:
@@ -259,9 +263,9 @@ If everything seem to be working, lets add the IP-address of `NAGIOS` to the *NR
 
 > $ sudo nano /usr/local/nagios/etc/nrpe.cfg
 
-and change the IP address on line 98 to the IP of `NAGIOS`: 
+and and the IP address of `NAGIOS` on line 106 to the IP of the localhost: 
 
-> allowed_hosts=x.x.x.x
+> allowed_hosts=127.0.0.1, **x.x.x.x**
 
 Now, you have to restart the *xinetd* and *nrpe* services:
 
@@ -269,12 +273,158 @@ Now, you have to restart the *xinetd* and *nrpe* services:
 
 > $ sudo service nrpe restart
 
-Lets head to our `NAGIOS`. You can check whether it is working by visiting its nagios endpoint in the browser (*http://x.x.x.x/nagios*). In the menu on the left, under Hosts and Services, you should see mostly green OK statuses indicating that it is successfully monitoring itself. Wouldn't it be nice, if it monitored our `STBM` server instead? First of all, lets check if it can reach `STBM` by running the following command, with the IP-address of `STBM` at the end:
+Lets head to our `NAGIOS`. You can check whether it is working by visiting its nagios endpoint in the browser (*http://**x.x.x.x**/nagios*). In the menu on the left, under Hosts and Services, you should see mostly green OK statuses indicating that it is successfully monitoring itself. Wouldn't it be nice, if it monitored our `STBM` server instead? First of all, lets check if it can reach `STBM` by running the following command, with the IP-address of `STBM` at the end:
 
-> $ /usr/local/nagios/libexec/check_nrpe -H x.x.x.x
+> $ /usr/local/nagios/libexec/check_nrpe -H **x.x.x.x**
 
 Which should return with the version number of the NRPE plugin in `STBM`
 
 > NRPE v4.0.0
 
 Very nice!
+
+## 2. Configure the servers to watch
+
+From now on, the directory `/usr/local/nagios/etc/` on `NAGIOS` will be the one we configure by making and changing the .cfg files. If we list the already existing files and directories here, we will see a `nagios.cfg` file and an `objects` folder among others. First, open the `nagios.cfg` file, and uncomment line 51 
+
+> $ cfg_dir=/usr/local/nagios/etc/servers
+
+Now, we can make the servers directory and put our server config files there.
+
+> $ sudo mkdir /usr/local/nagios/etc/servers
+
+Start this by making a copy of the localhost.cfg file in the `objects` folder inside of the `servers` directory.
+
+> $ sudo cp /usr/local/nagios/etc/objects/localhost.cfg /usr/local/nagios/etc/servers
+
+This `localhost.cfg` is the one telling Nagios what to monitor on our (*Linux*) local machine, therefore it is relatively easy to modify it to monitor our `STBM`. You can even rename it to `STBM.cfg` for example, if you like. Then open `STBM.cfg`, and change the host definition in the first part of the cfg file like this, using the IP-address of our `STBM`:
+
+```
+define host {
+
+    use                     linux-server
+    host_name               STBM
+    alias                   Linux Server Ubuntu 18.04.
+    address                 x.x.x.x
+}
+```
+
+The next part in the file is host **GROUP DEFINITIONS**, you can comment it out for now. The third section is called **SERVICE DEFINITIONS**, where you should change the *host_names* from localhosst to STBM, like this:
+
+```
+define service {
+
+    use                     local-service           ; Name of service template to use
+    host_name               STBM
+    service_description     PING
+    check_command           check_ping!100.0,20%!500.0,60%
+}
+```
+
+Now we turn to the commands it should execute, but don't forget about this file, as we will return to this to modify the *check_command* part of these services as well soon.
+
+### 3. Configure the commands
+
+#### The check_nrpe command
+
+Now open the `commands.cfg` file on `NAGIOS` in the `objects` folder. There are a lot of predefined commands here, except for one called `check_nrpe` - let's go ahead and create it (place somewhere in the list of commands, for example under the **SAMPLE SERVICE CHECK COMMANDS** section):
+
+```
+define command {
+
+    command_name    check_nrpe
+    command_line    $USER1$/check_nrpe -H $HOSTADDRESS$ -c $ARG1$
+}
+```
+
+This our main command to reach out to our `STBM` instance and invoke its commands defined on `STBM` and then read its result. 
+
+#### The commands on `STBM`
+
+Lets check these commands on `STBM` by running:
+
+> $ sudo nano /usr/local/nagios/etc/nrpe.cfg
+
+Lines 300-304 where you should look for the commands for the NRPE plugin. They can remain mostly untouched, except for the `check_hda1` command. Its default behavior is that it checks the load on the /dev/hda1 partition, but the actual drive of our machine might be named differently. To figure it out, exit from the config file and run:
+
+> $ lsblk
+
+The output of this command is going to be similar to this in the case of a micro aws EC2 instance with Ubuntu Server 18.04:
+
+```
+NAME    MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+loop0     7:0    0   89M  1 loop /snap/core/7713
+loop1     7:1    0   18M  1 loop /snap/amazon-ssm-agent/1480
+loop2     7:2    0 89.1M  1 loop /snap/core/8268
+xvda    202:0    0    8G  0 disk 
+└─xvda1 202:1    0    8G  0 part /
+```
+
+In this case, our root (/) partition that we are looking for is called *xvda1*. Go back to line 302 in our `nrpe.cfg` file and change the command like this:
+
+> command[check_xvda1]=/usr/local/nagios/libexec/check_disk -w 20% -c 10% -p /dev/xvda1
+
+After restarting the NRPE plugin (just in case) with 
+
+> $ sudo service nrpe restart
+
+we can check whether this commands work:
+
+> $ /usr/local/nagios/libexec/check_nrpe -H localhost -c check_xvda1
+
+If the output is similar to this:
+
+> DISK OK - free space: /var/tmp 6008 MiB (76.44% inode=90%);| /var/tmp=1851MiB;6300;7088;0;7876
+
+you are good to go!
+
+#### Calling the commands on `STBM` from `NAGIOS`
+
+The way you are going to run these commands from the `NAGIOS` server is the following: go back to edit the `STBM.cfg` file on `NAGIOS`
+
+> $ sudo nano /usr/local/nagios/etc/servers/STBM.cfg
+
+and change the command (*check_command*) for checking the disk space like this:
+
+```
+define service {
+
+    use                     local-service           ; Name of service template to use
+    host_name               STBM
+    service_description     Root Partition
+    check_command           check_nrpe!check_xvda1
+}
+```
+
+Similarly, you can change the command for checking the currently logged in users to `check_nrpe!check_users` and so on. To break this down a little bit: it uses the previously defined *check_nrpe* command with the argument `check_users` (after the `!`) that is defined in the `nrpe.cfg` file on the `STBM` machine - as far as my knowledge goes.
+
+You shall verify your Nagios configuration files by running 
+
+> $ /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg
+
+on your `NAGIOS` machine. If there are errors, fix them. If everything is fine, restart Nagios using
+
+> $ sudo service nagios restart
+
+### 4. Check Nagios server in your browser
+
+Visit the nagios endpoint of your `NAGIOS` instance (*http://**x.x.x.x**/nagios*). Now, under the *Hosts* and *Sevices* tab on the left, our good ol' STBM can also be found. Can this journey be over already? Not even close.
+
+### 5. Setting up an email service if the root partiton check turns red
+
+Open the contacts.cfg file on `NAGIOS`
+
+> $ sudo nano 
+
+and add your email address (or one you want to receive emails to) to the first block:
+
+```
+define contact {
+
+    contact_name            nagiosadmin             ; Short name of user
+    use                     generic-contact         ; Inherit default values from generic-contact template (defined above)
+    alias                   Nagios Admin            ; Full name of user
+    email                   nagios@localhost ; <<***** CHANGE THIS TO YOUR EMAIL ADDRESS ******
+}
+```
+
