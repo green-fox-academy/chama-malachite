@@ -1,19 +1,15 @@
 # Setting Up Nagios with Terraform on AWS
----
 Setting up Nagios on an EC2 instance with Terraform
 
 ## Introduction
----
 This documentation is written to help developers setting up Nagios from scartch on an AWS EC2 instance with a Terraform file.
 
 ## System requirements
----
 - AWS CLI is configured on your machine. Follow these steps: https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html
 - Terraform is configured on your machine. Detailed installation can be found here: https://learn.hashicorp.com/terraform/getting-started/install.html
 - A text editor of your choice (e.g.: Visual Studio Code, Brackets etc.)
 
 ## Create a new Terraform project
----
 Create a new folder for your Terraform project on your computer.
 
 You will need to create the following files in your project folder:
@@ -25,13 +21,13 @@ You will need to create the following files in your project folder:
 
 Let's start putting things in each of the above mentioned files:
 ---
-First, we will generate a public key so we can ssh into the EC2 instance:
+First, we will generate a public key so we can ssh into the EC2 instance.
 Open up another terminal window, and execute the following:
 ```
 cd ~/.ssh/
 ssh-keygen -t rsa -b 2048 -v
 ```
-For the filename, let's just enter 'my_test_key', so that the full location of the private key is '~/.ssh/my_test_key' and the public key is located at '~/.ssh/my_test_key.pub' . Let's leave the passwords blank.
+For the filename, let's just enter 'my_test_key', so that the full location of the private key is ~/.ssh/my_test_key and the public key is located at ~/.ssh/my_test_key.pub . Let's leave the passwords blank.
 Back in the project directory, execute the following command:
 ```
 cat ~/.ssh/my_test_key.pub > my_test_key.pub
@@ -150,9 +146,9 @@ resource "aws_instance" "example" {
   }
 }
 ```
+---
 
 - variables.tf: (swap everything with capital letters below,this file will be in the .gitignore file so you won't upload it to git. Never upload this data anywhere publically on the internet!!!)
----
 ```
 variable "aws_access_key" {
   default = "WRITE_YOUR_AWS_ACCESSKEY_HERE"
@@ -168,7 +164,6 @@ variable "aws_region" {
 ```
 
 ## Run Terraform
----
 ```
 terraform init
 ```
@@ -184,7 +179,6 @@ If you don't need your instance anymore, you can simply destroy it by typing the
 terraform destroy
 ```
 Type yes after prompted.
----
 
 ## Enjoy!
 
