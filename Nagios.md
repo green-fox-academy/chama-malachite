@@ -267,9 +267,7 @@ and and the IP address of `NAGIOS` on line 106 to the IP of the localhost:
 
 > allowed_hosts=127.0.0.1, **x.x.x.x**
 
-Now, you have to restart the *xinetd* and *nrpe* services:
-
-> $ sudo service xinetd restart
+Now, you have to restart the *nrpe* service:
 
 > $ sudo service nrpe restart
 
@@ -285,7 +283,11 @@ Very nice!
 
 ## 2. Configure the servers to watch
 
-From now on, the directory `/usr/local/nagios/etc/` on `NAGIOS` will be the one we configure by making and changing the .cfg files. If we list the already existing files and directories here, we will see a `nagios.cfg` file and an `objects` folder among others. First, open the `nagios.cfg` file, and uncomment line 51 
+From now on, the directory `/usr/local/nagios/etc/` on `NAGIOS` will be the one we configure by making and changing the .cfg files. If we list the already existing files and directories here, we will see a `nagios.cfg` file and an `objects` folder among others. First, open the `nagios.cfg` file
+
+> $ sudo nano /usr/local/nagios/etc/nagios.cfg
+
+and uncomment line 51 
 
 > $ cfg_dir=/usr/local/nagios/etc/servers
 
@@ -410,21 +412,108 @@ on your `NAGIOS` machine. If there are errors, fix them. If everything is fine, 
 
 Visit the nagios endpoint of your `NAGIOS` instance (*http://**x.x.x.x**/nagios*). Now, under the *Hosts* and *Sevices* tab on the left, our good ol' STBM can also be found. Can this journey be over already? Not even close.
 
-### 5. Setting up an email service if the root partiton check turns red
+### 5. Setting up an email service if the root partition check turns red
 
-Open the contacts.cfg file on `NAGIOS`
+#### Installing mail
 
-> $ sudo nano 
+First, we need to install `mailutils` so we can use /bin/mail on our system.
 
-and add your email address (or one you want to receive emails to) to the first block:
+> $ sudo apt install -y mailutils
+
+A Postfix Configuration prompt will be shown during the installation, feel free to choose the default values ("*Internet Site*" as type of mail configuration, and the default system mail name).
+
+Now you can send emails from the terminal using the following sytax:
+
+> $ echo "testing message" | mail -s "message subject" username@example.com
+
+Check the email client you sent your test message to, especially look into your Spam folder, as the test message most probably landed there.
+
+#### Setting up an event handler in Nagios
+
+Next, we will set up an event handler in `NAGIOS` which will execute a command similar to the previous one whenever the disk usage is over 60% on our `STBM` instance. To do this, we need to further modify our `commands.cfg` and `STBM.cfg` files, and we will also write a shell script that will send us an email.
+
+Let's start with the command. Open the previously edited `commands.cfg` file by running
+
+> $ sudo nano /usr/local/nagios/etc/objects/commands.cfg
+
+and add the following lines somewhere in the file, so the `send_email` command would call our not yet existing `send_email.sh` script in our not yet existing `scripts` directory, and pass 4 arguments to it.
 
 ```
-define contact {
+define command{
 
-    contact_name            nagiosadmin             ; Short name of user
-    use                     generic-contact         ; Inherit default values from generic-contact template (defined above)
-    alias                   Nagios Admin            ; Full name of user
-    email                   nagios@localhost ; <<***** CHANGE THIS TO YOUR EMAIL ADDRESS ******
+    command_name send_email
+    command_line /usr/local/nagios/etc/scripts/send_email.sh $SERVICESTATE$ $HOSTNAME$ $HOSTADDRESS$
 }
 ```
 
+Make this script exist by creating a `scripts` directory in `/usr/local/nagios/etc`, and creating the `send_email.sh` file in it:
+
+> $ sudo mkdir /usr/local/nagios/etc/scripts && cd /usr/local/nagios/etc/scripts
+> $ sudo touch send_email.sh && sudo nano send_email.sh
+
+Put a script similar like this inside:
+
+```
+#!/bin/sh
+#
+# Event handler script for sending an email when a state reaches a value
+#
+# What state is the HTTP service in?
+case "$1" in
+OK)
+	# Everything is OK, so don't do anything...
+	;;
+WARNING)
+    # Aha!  The disk service appears to have a problem - perhaps we should send the warning email...
+	mail -s "$2 (IP $3) disk warning" youremail@gmail.com
+	;;
+UNKNOWN)
+	# We don't know what might be causing an unknown error, so don't do anything...
+	;;
+CRITICAL)
+	# Aha!  The disk service appears to have a problem - perhaps we should send the warning email...
+    mail -s "$2 (IP $3) disk critical" youremail@gmail.com
+	;;
+esac
+exit 0
+```
+This will use the first argument we pass (`$SERVICESTATE$`) as `$1` to determine the current state of the disk, and if its state is *warning* or *critical*, it sends an email to the above specified email address with the name (`$2`) and the IP-address (`$3`) of the specific host (in this case, the `STBM`). You should make this script runnable with the following command:
+
+> $ sudo chmod +x /usr/local/nagios/etc/servers/scripts/send_email.sh
+
+What is still miss, is to add this event listener to the Root Partition service in our `STBM.cfg` file. So open it,
+
+> $ sudo nano /usr/local/nagios/etc/servers/STBM.cfg
+
+and add the `event_handler` line to the `Root Partiton` service:
+
+```
+define service {
+
+    use                     local-service           ; Name of service template to use
+    host_name               STBM
+    service_description     Root Partition
+    check_command           check_nrpe!check_xvda1
+    event_handler           send_email
+}
+```
+
+Lets verify if the check_xvda1 command does what we want on our `STBM` machine. Open the `nrpe.cfg` file with
+
+> $ sudo nano /usr/local/nagios/etc/nrpe.cfg
+
+and look at its line 302 (we already modified it once):
+
+`command[check_xvda1]=/usr/local/nagios/libexec/check_disk -w 20% -c 10% -p /dev/xvda1`
+
+The percentages after the `-w` and `-c` flags mean that its state becomes *warning* as soon as only 20% free space is left, and it becomes critical when only 10% is left. Our task is to send email when it is 60% full, so we should write 40% instead of the 20%. If we would like to try out whether it works, we can set a higher number, for example 95% first.
+
+Restart the nrpe on `STBM` with
+
+> $ sudo service nrpe restart
+
+and the nagios service on `NAGIOS` with
+
+> $ sudo service nagios restart
+
+And thats it, I believe!
