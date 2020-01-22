@@ -8,6 +8,8 @@ You can make these servers with Terraform or Pulumi, which will not be discussed
 
 The following scripts have comments included explaining every step of the process.
 
+# Install
+
 ## The script to set up the server with Nagios (`NAGIOS`) on Ubuntu 18.04
 
 ```
@@ -160,6 +162,44 @@ sudo make check_nrpe
 sudo make install-plugin
 ```
 
+## Server with Nagios (`NAGIOS`) with docker
+
+Apart from the regular installation, you can pull a docker image of Nagios as well. In this case, the script can look like this:
+
+```
+#! /bin/bash
+
+# installing Docker
+sudo apt-get install -yy \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg-agent \
+    software-properties-common
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository \
+   "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+   bionic \
+   stable"
+sudo apt update
+sudo apt install -yy docker-ce docker-ce-cli containerd.io
+sudo groupadd docker
+sudo usermod -aG docker $USER
+
+# creating the volume for Nagios config files to be added to the container
+sudo mkdir /usr/local/nagios/
+sudo mkdir /usr/local/nagios/etc/
+
+# pulling and starting the docker container
+sudo systemctl start docker
+sudo docker pull jasonrivers/nagios:latest
+sudo docker run -d --name nagios4  \
+  -v /usr/local/nagios/etc/:/opt/nagios/etc/ \
+  -p 80:80 jasonrivers/nagios:latest
+```
+
+After the server finished initializing, you can navigate to the `/usr/local/nagios/etc/` on the machine, where the configuring process will happen. I have not tested this containerized Nagios though, and I did run into some problems with it, which will not be discussed here.
+
 ## The script to set up the server to monitered by Nagios (`STBM`) on Ubuntu 18.04
 
 ```
@@ -237,9 +277,9 @@ initctl reload-configuration # upstart
 # In Ubuntu, the firewall is disabled by default (check: $ sudo ufw status)
 ```
 
-## Manual configuration
+# Manual configuration
 
-### 1. First, make sure these two speak to each other...
+## 1. First, make sure these two speak to each other...
 
 We need to ssh into both of these servers, and check first, whether everything is working as it should be.
 On `STBM` run the following command:
@@ -283,7 +323,7 @@ Very nice!
 
 ## 2. Configure the servers to watch
 
-From now on, the directory `/usr/local/nagios/etc/` on `NAGIOS` will be the one we configure by making and changing the .cfg files. If we list the already existing files and directories here, we will see a `nagios.cfg` file and an `objects` folder among others. First, open the `nagios.cfg` file
+From now on, the directory `/usr/local/nagios/etc/` on `NAGIOS` will be the one we configure by making and changing the *.cfg* files. If we list the already existing files and directories here, we will see a `nagios.cfg` file and an `objects` folder among others. First, open the `nagios.cfg` file
 
 > $ sudo nano /usr/local/nagios/etc/nagios.cfg
 
@@ -325,11 +365,15 @@ define service {
 
 Now we turn to the commands it should execute, but don't forget about this file, as we will return to this to modify the *check_command* part of these services as well soon.
 
-### 3. Configure the commands
+## 3. Configure the commands
 
-#### The check_nrpe command
+### The check_nrpe command
 
-Now open the `commands.cfg` file on `NAGIOS` in the `objects` folder. There are a lot of predefined commands here, except for one called `check_nrpe` - let's go ahead and create it (place somewhere in the list of commands, for example under the **SAMPLE SERVICE CHECK COMMANDS** section):
+Now open the `commands.cfg` file on `NAGIOS` in the `objects` folder. 
+
+> sudo nano /usr/local/nagios/etc/objects/commands.cfg
+
+There are a lot of predefined commands here, except for one called `check_nrpe` - let's go ahead and create it (place somewhere in the list of commands, for example under the **SAMPLE SERVICE CHECK COMMANDS** section):
 
 ```
 define command {
@@ -341,7 +385,7 @@ define command {
 
 This our main command to reach out to our `STBM` instance and invoke its commands defined on `STBM` and then read its result. 
 
-#### The commands on `STBM`
+### The commands on `STBM`
 
 Lets check these commands on `STBM` by running:
 
@@ -380,7 +424,7 @@ If the output is similar to this:
 
 you are good to go!
 
-#### Calling the commands on `STBM` from `NAGIOS`
+### Calling the commands on `STBM` from `NAGIOS`
 
 The way you are going to run these commands from the `NAGIOS` server is the following: go back to edit the `STBM.cfg` file on `NAGIOS`
 
@@ -408,13 +452,13 @@ on your `NAGIOS` machine. If there are errors, fix them. If everything is fine, 
 
 > $ sudo service nagios restart
 
-### 4. Check Nagios server in your browser
+## 4. Check Nagios server in your browser
 
 Visit the nagios endpoint of your `NAGIOS` instance (*http://**x.x.x.x**/nagios*). Now, under the *Hosts* and *Sevices* tab on the left, our good ol' STBM can also be found. Can this journey be over already? Not even close.
 
-### 5. Setting up an email service if the root partition check turns red
+## 5. Setting up an email service if the root partition check turns red
 
-#### Installing mail
+### Installing mail
 
 First, we need to install `mailutils` so we can use /bin/mail on our system.
 
@@ -428,7 +472,7 @@ Now you can send emails from the terminal using the following sytax:
 
 Check the email client you sent your test message to, especially look into your Spam folder, as the test message most probably landed there.
 
-#### Setting up an event handler in Nagios
+### Setting up an event handler in Nagios
 
 Next, we will set up an event handler in `NAGIOS` which will execute a command similar to the previous one whenever the disk usage is over 60% on our `STBM` instance. To do this, we need to further modify our `commands.cfg` and `STBM.cfg` files, and we will also write a shell script that will send us an email.
 
@@ -449,6 +493,7 @@ define command{
 Make this script exist by creating a `scripts` directory in `/usr/local/nagios/etc`, and creating the `send_email.sh` file in it:
 
 > $ sudo mkdir /usr/local/nagios/etc/scripts && cd /usr/local/nagios/etc/scripts
+
 > $ sudo touch send_email.sh && sudo nano send_email.sh
 
 Put a script similar like this inside:
